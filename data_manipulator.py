@@ -1,9 +1,10 @@
 import re
 import glob
 from PIL import Image
-from sklearn import svm, metrics
-import numpy as np
 import itertools
+import imageio
+from imgaug import augmenters as iaa
+from pathlib import Path
 
 NEW_DIM = (130, 100)
 NEW_ZOOM = 500
@@ -13,6 +14,7 @@ HIGH_RM = DATA_PATH + 'HighRm/'
 
 TRANSFORMED = './transformed_zoom{}_dim{}x{}/'.format(NEW_ZOOM, NEW_DIM[0], NEW_DIM[1])
 TRANSFORMED_NORMALIZED = TRANSFORMED + 'normalized/'
+TRANSFORMED_AUGMENTED = './transformed_augmented_zoom{}_dim{}x{}/'.format(NEW_ZOOM, NEW_DIM[0], NEW_DIM[1])
 
 
 # TODO: It should clear data which does not have specified zoom in its name
@@ -24,9 +26,7 @@ def normalize_data(data):
     out = []
     for d in data:
         p, im, res, zoom = d
-
         add_to_out = []
-
         if zoom < NEW_ZOOM:
             # we can sample more images
             range_res = int(res[0] / (NEW_ZOOM / zoom)), int(res[1] / (NEW_ZOOM / zoom))
@@ -61,30 +61,59 @@ def normalize_data(data):
     return out
 
 
-def save_normalized(data):
-    from pathlib import Path
+def save_data(data):
     Path(TRANSFORMED).mkdir(parents=True, exist_ok=True)
     Path(TRANSFORMED + LOW_RM).mkdir(parents=True, exist_ok=True)
     Path(TRANSFORMED + HIGH_RM).mkdir(parents=True, exist_ok=True)
+
+    Path(TRANSFORMED_AUGMENTED).mkdir(parents=True, exist_ok=True)
+    Path(TRANSFORMED_AUGMENTED + LOW_RM).mkdir(parents=True, exist_ok=True)
+    Path(TRANSFORMED_AUGMENTED + HIGH_RM).mkdir(parents=True, exist_ok=True)
 
     for o_p, o_im, res, o_zoom in data:
         o_im.save(o_p, 'PNG')
 
 
-def augment_data():
-    pass
+# TODO: add data augmentation
+# This function returns only augmented data
+def augment_data(data):
+    rotate = iaa.Affine(rotate=(-25, 25))
+    gaussian_noise = iaa.AdditiveGaussianNoise(scale=(10, 60))
+    contrast = iaa.GammaContrast(gamma=2.0)
 
+    # https://towardsdatascience.com/data-augmentation-techniques-in-python-f216ef5eed69
+    out = []
+    for p, _, res, zoom in data:
+        im = imageio.imread(p)
 
-def create_svm_classifier():
-    pass
+        # rotate
+        x = p.split("/")
+        x[1] = TRANSFORMED_AUGMENTED
+        x[-1] = x[-1][:-4] + "_rotation" + x[-1][-4:]
+        r_p = "/".join(x)
+        r_im = Image.fromarray(rotate.augment_image(im))
 
+        out.append([r_p, r_im, res, zoom])
 
-def create_knn_classifier():
-    pass
+        # gamma/brigtnes
+        x = p.split("/")
+        x[1] = TRANSFORMED_AUGMENTED
+        x[-1] = x[-1][:-4] + "_gamma" + x[-1][-4:]
+        g_p = "/".join(x)
+        g_im = Image.fromarray((contrast.augment_image(im)))
 
+        out.append([g_p, g_im, res, zoom])
 
-def create_cnn_classifier():
-    pass
+        # gausian
+        x = p.split("/")
+        x[1] = TRANSFORMED_AUGMENTED
+        x[-1] = x[-1][:-4] + "_gaussian" + x[-1][-4:]
+        gau_p = "/".join(x)
+        gau_im = Image.fromarray(gaussian_noise.augment_image(im))
+
+        out.append([gau_p, gau_im, res, zoom])
+
+    return out
 
 
 def find_zoom(s):
@@ -121,7 +150,11 @@ if __name__ == '__main__':
     low, high = load_data()
     print(low[0])
     print(find_bounds(low + high))
+
     normalized_low = normalize_data(low)
     normalized_high = normalize_data(high)
 
-    save_normalized(normalized_low + normalized_high)
+    augmented_low = augment_data(normalized_low)
+    augmented_high = augment_data(normalized_high)
+
+    save_data(normalized_low + normalized_high + augmented_low + augmented_high)
