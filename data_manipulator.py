@@ -1,6 +1,9 @@
 import re
 import glob
 from PIL import Image
+from sklearn import svm, metrics
+import numpy as np
+import itertools
 
 NEW_DIM = (130, 100)
 NEW_ZOOM = 500
@@ -9,6 +12,7 @@ LOW_RM = DATA_PATH + 'LowRm/'
 HIGH_RM = DATA_PATH + 'HighRm/'
 
 TRANSFORMED = './transformed_zoom{}_dim{}x{}/'.format(NEW_ZOOM, NEW_DIM[0], NEW_DIM[1])
+TRANSFORMED_NORMALIZED = TRANSFORMED + 'normalized/'
 
 
 # TODO: It should clear data which does not have specified zoom in its name
@@ -16,32 +20,55 @@ def clear_data():
     pass
 
 
-# TODO: normalize data with zoom, resolution etc etc
 def normalize_data(data):
     out = []
     for d in data:
         p, im, res, zoom = d
 
-        o_p = TRANSFORMED + p
+        add_to_out = []
+
         if zoom < NEW_ZOOM:
-            centre = int(res[0] / 2), int(res[1] / 2)
-            range_res = res[0] / (NEW_ZOOM / zoom), res[1] / (NEW_ZOOM / zoom)
-            start_res = int(centre[0] - range_res[0] / 2), int(centre[1] - range_res[1] / 2)
-            end_res = int(centre[0] + range_res[0] / 2), int(centre[1] + range_res[1] / 2)
-            area = (start_res[0], start_res[1], end_res[0], end_res[1])
-            o_im = im.crop(area)
-            o_zoom = NEW_ZOOM
+            # we can sample more images
+            range_res = int(res[0] / (NEW_ZOOM / zoom)), int(res[1] / (NEW_ZOOM / zoom))
+            centre_x = [x for x in range(range_res[0], res[0] - range_res[0], range_res[0])]
+            centre_y = [x for x in range(range_res[1], res[1] - range_res[1], range_res[1])]
+
+            centre = list(itertools.product(centre_x, centre_y))
+
+            i = 0
+            for c in centre:
+                start_res = c[0] - range_res[0], c[1] - range_res[1]
+                end_res = c[0] + range_res[0], c[1] + range_res[1]
+                area = (start_res[0], start_res[1], end_res[0], end_res[1])
+                o_im = im.crop(area)
+                o_zoom = NEW_ZOOM
+                o_p = TRANSFORMED + p[:-4] + "_" + str(i) + '.png'
+                i += 1
+                o_res = NEW_DIM
+                o_im = o_im.resize(NEW_DIM)
+                add_to_out.append([o_p, o_im, o_res, o_zoom])
+
         else:
-            o_im = im
+            o_p = TRANSFORMED + p[:-4] + '.png'
+            o_im = im  # .convert('LA')
             o_zoom = zoom
+            o_res = NEW_DIM
+            o_im = o_im.resize(NEW_DIM)
+            add_to_out.append([o_p, o_im, o_res, o_zoom])
 
-        o_im = o_im.resize(NEW_DIM)
-        res = NEW_DIM
-
-        out.append([o_p, o_im, res, o_zoom])
-        # first zoom than resize
+        out += add_to_out
 
     return out
+
+
+def save_normalized(data):
+    from pathlib import Path
+    Path(TRANSFORMED).mkdir(parents=True, exist_ok=True)
+    Path(TRANSFORMED + LOW_RM).mkdir(parents=True, exist_ok=True)
+    Path(TRANSFORMED + HIGH_RM).mkdir(parents=True, exist_ok=True)
+
+    for o_p, o_im, res, o_zoom in data:
+        o_im.save(o_p, 'PNG')
 
 
 def augment_data():
@@ -56,7 +83,7 @@ def create_knn_classifier():
     pass
 
 
-def create_cnn_classfier():
+def create_cnn_classifier():
     pass
 
 
@@ -97,10 +124,4 @@ if __name__ == '__main__':
     normalized_low = normalize_data(low)
     normalized_high = normalize_data(high)
 
-    from pathlib import Path
-    Path(TRANSFORMED).mkdir(parents=True, exist_ok=True)
-    Path(TRANSFORMED+LOW_RM).mkdir(parents=True, exist_ok=True)
-    Path(TRANSFORMED+HIGH_RM).mkdir(parents=True, exist_ok=True)
-
-    for o_p, o_im, res, o_zoom in normalized_low[2:6]:
-        o_im.save(o_p, 'JPEG')
+    save_normalized(normalized_low + normalized_high)
