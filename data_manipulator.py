@@ -154,7 +154,9 @@ if __name__ == '__main__':
     normalized_low = normalize_data(low)
     normalized_high = normalize_data(high)
 
+    save_data(normalized_low + normalized_high)
+
     augmented_low = augment_data(normalized_low)
     augmented_high = augment_data(normalized_high)
 
-    save_data(normalized_low + normalized_high + augmented_low + augmented_high)
+    save_data(augmented_low + augmented_high)
